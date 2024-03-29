@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Stack for creating an RDS instance and an EC2 instance within an existing VPC
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: Mumbai-key 
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+  
+  VpcId:
+    Description: allow you to select one valued from vpc list
+    Type: AWS::EC2::VPC::Id
+  dbsubnet:
+    Description: select more than one subnet value
+    Type: List<AWS::EC2::Subnet::Id>
+  InstanceSubnetId:
+    Description: ID of the subnet where the EC2 instance will be launched
+    Type: AWS::EC2::Subnet::Id
+  
+  DBInstanceName:
+    Description: Name of the RDS instance
+    Type: String
+    Default: cloudProject
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.
+
+  DBInstanceClass:
+    Description: RDS instance class
+    Type: String
+    Default: db.t3.large
+    AllowedValues:
+      - db.t2.micro
+      - db.t2.small
+      - db.t3.large
+      # Add more instance types as needed
+  DBAllocatedStorage:
+    Description: The size of the database (GiB)
+    Type: Number
+    MinValue: '10'
+    MaxValue: '20'
+    ConstraintDescription: must be between 10 and 20 GiB.
+  DBUsername:
+    Description: Username for the RDS instance
+    Type: String
+    NoEcho: 'true'
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    Description: Password for the RDS instance
+    Type: String
+    NoEcho: 'true'
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      # Add more instance types as needed
+
+Resources:
+  MyDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS instance
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          CidrIp: 0.0.0.0/0
+
+  MyEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH and HTTP access
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+  MyDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Subnet group for RDS"
+      SubnetIds: !Ref dbsubnet
+  MyDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Ref DBInstanceName
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: MariaDB
+      EngineVersion: '10.5.23'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref MyDBSubnetGroup
+      MultiAZ: true 
+      AllocatedStorage: !Ref DBAllocatedStorage
+      VPCSecurityGroups:
+        - !Ref MyDBSecurityGroup
+
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-013168dc3850ef002 # Specify your desired AMI ID here
+      KeyName: !Ref KeyName # Specify your key pair here
+      SecurityGroupIds:
+        - !Ref MyEC2SecurityGroup
+      SubnetId: !Ref InstanceSubnetId
+      Tags:
+        - Key: Name
+          Value: CFTtask
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "Hello from EC2!"
+
+Outputs:
+  RDSInstanceEndpoint:
+    Description: Endpoint of the created RDS instance
+    Value: !GetAtt MyDBInstance.Endpoint.Address
+  RDSInstancePort:
+    Description: Port of the created RDS instance
+    Value: !GetAtt MyDBInstance.Endpoint.Port
+
